@@ -120,6 +120,7 @@ def main():
     server_socket.listen(5)
 
     global CLIENT_HANDLER_THREADS
+    global CLIENT_SOCKETS
     print(f"Server listening on {HOST}:{PORT}")
 
     try:
