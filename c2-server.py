@@ -53,7 +53,7 @@ def generate_key_from_password(password: str, salt: bytes = None) -> tuple:
         iterations=480000,  # High iteration count for security
     )
     
-    key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+    key = kdf.derive(password.encode())
     return key, salt
 
 

