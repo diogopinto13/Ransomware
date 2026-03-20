@@ -123,14 +123,19 @@ def main():
     global CLIENT_HANDLER_THREADS
     print(f"Server listening on {HOST}:{PORT}")
 
-    while True:
-        client_socket, addr = server_socket.accept()
-        print(f"Connection from {addr}")
+    try:
+        while True:
+            client_socket, addr = server_socket.accept()
+            print(f"Connection from {addr}")
 
-        CLIENT_HANDLER_THREADS.append(threading.Thread(target=handle_client, args=(client_socket,key, salt)))
-        CLIENT_HANDLER_THREADS[-1].start()
-        VICTIM_CORRECT_ANSWERS_COUNTER[addr] = 0
-        CLIENT_SOCKETS.append(client_socket)
-
+            CLIENT_HANDLER_THREADS.append(threading.Thread(target=handle_client, args=(client_socket,key, salt)))
+            CLIENT_HANDLER_THREADS[-1].start()
+            VICTIM_CORRECT_ANSWERS_COUNTER[addr] = 0
+            CLIENT_SOCKETS.append(client_socket)
+    
+    except Exception as e:
+        print("Exception: " + str(e))
+    finally:
+        server_socket.close()
 if __name__ == "__main__":
     main()
