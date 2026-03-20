@@ -37,8 +37,8 @@ def verify_answers(question: str, answer: str, victim_addr) -> bool:
     if question in QUESTIONS and QUESTIONS[question].lower() == answer.lower():
         VICTIM_CORRECT_ANSWERS_COUNTER[victim_addr] += 1
         print(f"Victim {victim_addr} answered correctly. Total correct answers: {VICTIM_CORRECT_ANSWERS_COUNTER[victim_addr]}")
-
-    return True
+        return True
+    return False
 
 def generate_key_from_password(password: str, salt: bytes = None) -> tuple:
     if salt is None:

